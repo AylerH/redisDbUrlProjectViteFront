@@ -3,7 +3,8 @@
 这是一个功能强大的 Redis 数据库控制面板，用于全面管理 Redis 数据库中的数据。该项目使用 Vite 构建，React 框架实现，通过与 Redis API 服务交互，提供直观友好的 UI 界面来操作和监控 Redis 数据库。
 # 概览
 后端项目gitee(有dockerfile)：https://gitee.com/aylerh/redis-db-url-project
-此前端项目github（无dockerfile）：
+
+此前端项目github（无dockerfile）：https://github.com/AylerH/redisDbUrlProjectViteFront
 
 ## 功能特性
 

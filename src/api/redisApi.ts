@@ -1,13 +1,16 @@
 import axios from 'axios';
 
-// 修改API基础URL的处理方式，确保与测试环境一致
+// 获取环境信息
 const isDevelopment = import.meta.env.DEV;
+console.log('前端应用环境:', isDevelopment ? '开发环境' : '生产环境');
+
 // 无论开发还是生产环境，都使用相对路径，避免CORS问题
 const API_BASE_URL = '/api';
+console.log('API基础URL:', API_BASE_URL);
 
 // 创建一个可以配置的API实例
 const createRedisApi = () => {
-  return axios.create({
+  const instance = axios.create({
     baseURL: API_BASE_URL,
     headers: {
       'Content-Type': 'application/json',
@@ -18,6 +21,32 @@ const createRedisApi = () => {
     // 设置较长的超时时间
     timeout: 30000
   });
+
+  // 请求拦截器
+  instance.interceptors.request.use((config) => {
+    console.log(`发送请求: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+    return config;
+  }, (error) => {
+    console.error('请求错误:', error);
+    return Promise.reject(error);
+  });
+
+  // 响应拦截器
+  instance.interceptors.response.use((response) => {
+    console.log(`响应成功: ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`);
+    return response;
+  }, (error) => {
+    if (error.response) {
+      console.error(`响应错误: ${error.response.status} ${error.config?.url}`);
+    } else if (error.request) {
+      console.error('未收到响应:', error.message);
+    } else {
+      console.error('请求配置错误:', error.message);
+    }
+    return Promise.reject(error);
+  });
+
+  return instance;
 };
 
 // 默认API实例
@@ -64,8 +93,8 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
   }
 
   try {
-    // 使用与测试环境相同的路径 - 关键修改
-    console.log('请求数据库列表，环境:', isDevelopment ? '开发' : '生产');
+    // 详细日志
+    console.log(`请求数据库列表 - 环境:${isDevelopment ? '开发' : '生产'}, 强制刷新:${forceRefresh}`);
     
     // 使用redisApi实例，保持与其他API请求一致的处理方式
     const response = await redisApi.get('/db_redis/databases');
@@ -78,16 +107,36 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     return response.data;
   } catch (error) {
     console.error('获取数据库列表失败:', error);
-    console.log('返回模拟数据');
     
-    // 如果缓存中有数据，返回缓存数据，即使已过期
-    if (cache.databases) {
-      console.log('返回过期的缓存数据');
-      return cache.databases;
+    // 尝试直接使用axios发送请求（作为备选方案）
+    try {
+      console.log('尝试使用备选方法获取数据库列表...');
+      const directResponse = await axios.get('/db_redis/databases', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        }
+      });
+      console.log('备选方法成功:', directResponse.data);
+      
+      // 更新缓存
+      cache.databases = directResponse.data;
+      cache.expiry = Date.now() + CACHE_EXPIRY;
+      
+      return directResponse.data;
+    } catch (directError) {
+      console.error('备选方法也失败:', directError);
+      console.log('返回模拟数据');
+      
+      // 如果缓存中有数据，返回缓存数据，即使已过期
+      if (cache.databases) {
+        console.log('返回过期的缓存数据');
+        return cache.databases;
+      }
+      
+      // 返回模拟数据，避免UI出错
+      return MOCK_DATABASE_LIST;
     }
-    
-    // 返回模拟数据，避免UI出错
-    return MOCK_DATABASE_LIST;
   }
 };
 
