@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://redis-ctl-api.onrender.com/$1" },
+    { "source": "/db_redis/(.*)", "destination": "https://redis-ctl-api.onrender.com/db_redis/$1" }
+  ]
+} 
