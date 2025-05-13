@@ -5,16 +5,43 @@ const axios = require('axios');
 const directRequests = require('./directRequests.cjs');
 const healthCheck = require('./healthCheck.cjs');
 const routeCheck = require('./routeCheckMiddleware.cjs');
+const fs = require('fs');
 const app = express();
 
-// API后端服务地址
-const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
+// 尝试从.env文件读取后端URL
+let BACKEND_URL = 'https://redis-ctl-api.onrender.com'; // 默认值
+
+// 读取.env文件
+try {
+  if (fs.existsSync('.env')) {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    const envLines = envContent.split('\n');
+    
+    for (const line of envLines) {
+      if (line.startsWith('backend_url=')) {
+        BACKEND_URL = line.substring('backend_url='.length).trim();
+        break;
+      }
+    }
+  }
+} catch (err) {
+  console.error('读取.env文件失败:', err);
+}
+
+// 从环境变量中读取后端URL（如果存在）
+if (process.env.backend_url) {
+  BACKEND_URL = process.env.backend_url;
+}
+
 console.log('后端API URL:', BACKEND_URL);
 
 // 环境信息
 const isProduction = process.env.NODE_ENV === 'production';
 const isRender = process.env.RENDER === 'true';
 console.log(`环境: ${isProduction ? '生产' : '开发'}, Render环境: ${isRender ? '是' : '否'}`);
+
+// 导出后端URL供其他模块使用
+process.env.BACKEND_URL = BACKEND_URL;
 
 // 使用JSON解析中间件
 app.use(express.json());
@@ -103,6 +130,11 @@ app.post('/api/db_redis/:dbName/fuzzy_match/id', directRequests.matchCompanyById
 app.get('/api/db_redis/databases', (req, res) => {
   console.log('捕获到特殊路径: /api/db_redis/databases');
   directRequests.getDatabases(req, res);
+});
+
+// 提供后端URL的API端点
+app.get('/api/config/backend-url', (req, res) => {
+  res.json({ backend_url: BACKEND_URL });
 });
 
 // 尝试代理其他请求

@@ -1,8 +1,9 @@
 // healthCheck.cjs
 const axios = require('axios');
 
-// API后端地址
-const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
+// 从环境变量获取API后端地址
+const BACKEND_URL = process.env.BACKEND_URL || 'https://redis-ctl-api.onrender.com';
+console.log('健康检查模块 - 后端API URL:', BACKEND_URL);
 
 // 后端健康状态
 let backendHealth = {
@@ -51,7 +52,8 @@ function getHealthStatus() {
     backend: backendHealth,
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
-      nodeVersion: process.version
+      nodeVersion: process.version,
+      backendUrl: BACKEND_URL
     }
   };
 }

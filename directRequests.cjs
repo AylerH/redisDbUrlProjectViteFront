@@ -1,7 +1,8 @@
 const axios = require('axios');
 
-// API后端服务地址
-const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
+// 从环境变量或.env文件获取API后端服务地址
+let BACKEND_URL = process.env.BACKEND_URL || 'https://redis-ctl-api.onrender.com';
+// 确保从server.cjs获取了环境变量
 console.log('直接请求模块 - 后端API URL:', BACKEND_URL);
 
 // 判断是否在Render环境中

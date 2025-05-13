@@ -4,9 +4,28 @@ import axios from 'axios';
 const isDevelopment = import.meta.env.DEV;
 console.log('前端应用环境:', isDevelopment ? '开发环境' : '生产环境');
 
+// 默认后端URL配置（将通过API获取实际值）
+let BACKEND_URL: string | null = null;
+
 // 无论在任何环境中，都使用相对路径访问API
 const API_BASE_URL = '/api';
 console.log('API基础URL:', API_BASE_URL);
+
+// 获取后端URL配置
+const fetchBackendUrl = async () => {
+  try {
+    const response = await axios.get('/api/config/backend-url');
+    if (response.data && response.data.backend_url) {
+      BACKEND_URL = response.data.backend_url;
+      console.log('获取到后端URL配置:', BACKEND_URL);
+    }
+  } catch (error) {
+    console.error('获取后端URL配置失败:', error);
+  }
+};
+
+// 初始化时获取后端URL
+fetchBackendUrl();
 
 // 创建一个统一的API实例
 const createRedisApi = () => {
@@ -77,6 +96,31 @@ export const updateApiPort = (port: string) => {
   return port;
 };
 
+// 处理直接请求后端API（使用已获取的BACKEND_URL）
+async function directRequestToBackend(endpoint: string, options: any = {}) {
+  if (!BACKEND_URL) {
+    // 如果BACKEND_URL未设置，尝试获取
+    await fetchBackendUrl();
+  }
+  
+  if (BACKEND_URL) {
+    // 如果有BACKEND_URL，直接请求后端
+    const url = `${BACKEND_URL}${endpoint}`;
+    console.log(`直接请求后端API: ${url}`);
+    return axios({
+      url,
+      ...options,
+      timeout: 5000
+    });
+  }
+  
+  // 回退到相对路径
+  return axios({
+    url: endpoint.startsWith('/') ? endpoint : `/${endpoint}`,
+    ...options
+  });
+}
+
 // 处理API请求错误并尝试备用方法
 async function handleApiRequestWithFallback<T>(
   mainRequest: () => Promise<T>,
@@ -95,6 +139,22 @@ async function handleApiRequestWithFallback<T>(
       return await directRequest();
     } catch (directError) {
       console.error('直接请求也失败:', directError);
+      
+      // 尝试使用BACKEND_URL直接请求后端
+      try {
+        // 提取端点路径，假设是第一个函数参数
+        const mainRequestFunc = mainRequest.toString();
+        const match = mainRequestFunc.match(/\.get\(['"]([^'"]+)['"]\)/);
+        const endpoint = match ? match[1] : '';
+        
+        if (endpoint && BACKEND_URL) {
+          console.log(`尝试使用后端URL直接请求: ${BACKEND_URL}${endpoint}`);
+          const response = await directRequestToBackend(endpoint);
+          return response.data;
+        }
+      } catch (backendError) {
+        console.error('后端直接请求失败:', backendError);
+      }
       
       // 如果有模拟数据，则返回
       if (mockData !== undefined) {
@@ -123,6 +183,7 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
 
   // 定义请求函数
   const mainRequest = async () => {
+    // 标准请求（使用代理）
     const response = await redisApi.get('/db_redis/databases');
     console.log('成功获取数据库列表:', response.data);
     
@@ -147,14 +208,27 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     } catch (error) {
       console.error('路径 /db_redis/databases 失败, 尝试完整路径');
       
-      // 尝试使用完整URL
-      const fullUrlResponse = await axios.get(window.location.origin + '/db_redis/databases');
-      
-      // 更新缓存
-      cache.databases = fullUrlResponse.data;
-      cache.expiry = Date.now() + CACHE_EXPIRY;
-      
-      return fullUrlResponse.data;
+      try {
+        // 尝试使用窗口位置
+        const fullUrlResponse = await axios.get(window.location.origin + '/db_redis/databases');
+        
+        // 更新缓存
+        cache.databases = fullUrlResponse.data;
+        cache.expiry = Date.now() + CACHE_EXPIRY;
+        
+        return fullUrlResponse.data;
+      } catch (windowError) {
+        console.error('窗口位置路径失败, 尝试直接后端请求');
+        
+        // 尝试直接请求后端
+        const backendResponse = await directRequestToBackend('/db_redis/databases');
+        
+        // 更新缓存
+        cache.databases = backendResponse.data;
+        cache.expiry = Date.now() + CACHE_EXPIRY;
+        
+        return backendResponse.data;
+      }
     }
   };
   
