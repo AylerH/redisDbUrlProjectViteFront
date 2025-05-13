@@ -4,24 +4,38 @@ const path = require('path');
 const axios = require('axios');
 const directRequests = require('./directRequests.cjs');
 const healthCheck = require('./healthCheck.cjs');
+const routeCheck = require('./routeCheckMiddleware.cjs');
 const app = express();
 
 // API后端服务地址
 const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
 console.log('后端API URL:', BACKEND_URL);
 
+// 环境信息
+const isProduction = process.env.NODE_ENV === 'production';
+const isRender = process.env.RENDER === 'true';
+console.log(`环境: ${isProduction ? '生产' : '开发'}, Render环境: ${isRender ? '是' : '否'}`);
+
 // 使用JSON解析中间件
 app.use(express.json());
 
-// 请求日志中间件
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+// 添加路由检查中间件（仅在生产环境启用完整日志）
+app.use(routeCheck.createMatchLogger());
+if (isRender) {
+  console.log('启用详细请求日志...');
+  app.use(routeCheck.createRequestLogger());
+  app.use(routeCheck.createApiPathChecker());
+} else {
+  // 在非Render环境中使用简化的请求日志
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+    });
+    next();
   });
-  next();
-});
+}
 
 // API代理配置
 const apiProxy = createProxyMiddleware({
@@ -66,12 +80,30 @@ app.use((req, res, next) => {
 app.get('/health', healthCheck.healthCheckHandler);
 app.get('/api/health', healthCheck.healthCheckHandler); // 备用路径
 
-// 直接处理特定请求
+// 特殊路由处理 - 直接处理API请求
+console.log('设置直接请求处理程序');
+
+// 处理常见API路径 - 包括带和不带/api前缀的路径
 app.get('/db_redis/databases', directRequests.getDatabases);
+app.get('/api/db_redis/databases', directRequests.getDatabases);
+
 app.get('/db_redis/:dbName/entity/:companyId', directRequests.getCompanyById);
+app.get('/api/db_redis/:dbName/entity/:companyId', directRequests.getCompanyById);
+
 app.get('/db_redis/:dbName/fields', directRequests.getDbFields);
+app.get('/api/db_redis/:dbName/fields', directRequests.getDbFields);
+
 app.get('/db_redis/:dbName/list', directRequests.listCompanies);
+app.get('/api/db_redis/:dbName/list', directRequests.listCompanies);
+
 app.post('/db_redis/:dbName/fuzzy_match/id', directRequests.matchCompanyById);
+app.post('/api/db_redis/:dbName/fuzzy_match/id', directRequests.matchCompanyById);
+
+// 修复 - 确保/api/db_redis/databases路径工作正常
+app.get('/api/db_redis/databases', (req, res) => {
+  console.log('捕获到特殊路径: /api/db_redis/databases');
+  directRequests.getDatabases(req, res);
+});
 
 // 尝试代理其他请求
 app.use('/api', apiProxy);

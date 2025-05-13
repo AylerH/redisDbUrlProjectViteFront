@@ -77,6 +77,37 @@ export const updateApiPort = (port: string) => {
   return port;
 };
 
+// 处理API请求错误并尝试备用方法
+async function handleApiRequestWithFallback<T>(
+  mainRequest: () => Promise<T>,
+  directRequest: () => Promise<T>,
+  mockData?: T
+): Promise<T> {
+  try {
+    // 尝试主要请求方式
+    return await mainRequest();
+  } catch (error) {
+    console.error('主要请求失败:', error);
+    
+    try {
+      // 尝试直接请求
+      console.log('尝试直接请求...');
+      return await directRequest();
+    } catch (directError) {
+      console.error('直接请求也失败:', directError);
+      
+      // 如果有模拟数据，则返回
+      if (mockData !== undefined) {
+        console.log('返回模拟数据');
+        return mockData;
+      }
+      
+      // 否则抛出原始错误
+      throw error;
+    }
+  }
+}
+
 // 获取Redis数据库列表（带缓存）
 export const getDatabases = async (forceRefresh: boolean = false) => {
   // 如果缓存有效且未强制刷新，直接返回缓存
@@ -90,11 +121,8 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     return cache.databases;
   }
 
-  try {
-    // 日志记录
-    console.log(`请求数据库列表 - 强制刷新:${forceRefresh}`);
-    
-    // 统一的API请求方式，开发环境和生产环境相同
+  // 定义请求函数
+  const mainRequest = async () => {
     const response = await redisApi.get('/db_redis/databases');
     console.log('成功获取数据库列表:', response.data);
     
@@ -103,32 +131,34 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     cache.expiry = Date.now() + CACHE_EXPIRY;
     
     return response.data;
-  } catch (error) {
-    console.error('获取数据库列表失败:', error);
-    
-    // 尝试直接获取
+  };
+  
+  const directRequest = async () => {
+    // 尝试不同的路径
     try {
-      console.log('尝试直接获取数据库列表...');
-      const directResponse = await axios.get('/db_redis/databases');
-      console.log('直接请求成功:', directResponse.data);
+      console.log('尝试路径 /db_redis/databases...');
+      const response = await axios.get('/db_redis/databases');
       
       // 更新缓存
-      cache.databases = directResponse.data;
+      cache.databases = response.data;
       cache.expiry = Date.now() + CACHE_EXPIRY;
       
-      return directResponse.data;
-    } catch (directError) {
-      console.error('直接请求失败:', directError);
+      return response.data;
+    } catch (error) {
+      console.error('路径 /db_redis/databases 失败, 尝试完整路径');
       
-      if (cache.databases) {
-        console.log('返回过期的缓存数据');
-        return cache.databases;
-      }
+      // 尝试使用完整URL
+      const fullUrlResponse = await axios.get(window.location.origin + '/db_redis/databases');
       
-      // 返回模拟数据
-      return MOCK_DATABASE_LIST;
+      // 更新缓存
+      cache.databases = fullUrlResponse.data;
+      cache.expiry = Date.now() + CACHE_EXPIRY;
+      
+      return fullUrlResponse.data;
     }
-  }
+  };
+  
+  return handleApiRequestWithFallback(mainRequest, directRequest, MOCK_DATABASE_LIST);
 };
 
 // 清除缓存，强制刷新
@@ -140,107 +170,148 @@ export const clearDatabasesCache = () => {
 
 // 根据ID获取公司详细信息
 export const getCompanyById = async (dbName: string, companyId: string) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/entity/${companyId}`);
-    return response.data;
-  } catch (error) {
-    console.error('获取公司信息失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/entity/${companyId}`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 获取特定公司的字段和对应的值
 export const getCompanyFields = async (dbName: string, companyId: string) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/entity/${companyId}/fields`);
-    return response.data;
-  } catch (error) {
-    console.error('获取公司字段失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/entity/${companyId}/fields`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 获取数据库所有字段名称
 export const getDbFields = async (dbName: string) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/fields`);
-    return response.data;
-  } catch (error) {
-    console.error('获取数据库字段失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/fields`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 获取数据库统计信息
 export const getDbStats = async (dbName: string) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/stats`);
-    return response.data;
-  } catch (error) {
-    console.error('获取数据库统计信息失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/stats`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 获取所有公司列表
 export const listAllCompanies = async (dbName: string, limit: number = 100, offset: number = 0) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/list?limit=${limit}&offset=${offset}`);
-    return response.data;
-  } catch (error) {
-    console.error('获取公司列表失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/list?limit=${limit}&offset=${offset}`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 导出数据库为JSON
 export const exportDbToJson = async (dbName: string, pretty: boolean = false, asFile: boolean = false) => {
-  try {
-    const response = await redisApi.get(`/db_redis/${dbName}/export/json?pretty=${pretty}&as_file=${asFile}`);
-    return response.data;
-  } catch (error) {
-    console.error('导出数据库失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/export/json?pretty=${pretty}&as_file=${asFile}`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 检查Redis健康状态
 export const checkRedisHealth = async () => {
-  try {
-    const response = await redisApi.get('/db_redis/health');
-    return response.data;
-  } catch (error) {
-    console.error('检查Redis健康状态失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/health`;
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.get(endpoint);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.get(`/${endpoint}`);
+      return response.data;
+    }
+  );
 };
 
 // 模糊匹配公司ID (POST方法)
 export const matchCompanyById = async (dbName: string, query: string, minSimilarity: number = 0.6) => {
-  try {
-    const response = await redisApi.post(`/db_redis/${dbName}/fuzzy_match/id`, {
-      query,
-      min_similarity: minSimilarity
-    });
-    return response.data;
-  } catch (error) {
-    console.error('模糊匹配公司ID失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/fuzzy_match/id`;
+  const data = { query, min_similarity: minSimilarity };
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.post(endpoint, data);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.post(`/${endpoint}`, data);
+      return response.data;
+    }
+  );
 };
 
 // 模糊匹配公司名称 (POST方法)
 export const matchCompanyByName = async (dbName: string, query: string, minSimilarity: number = 0.6) => {
-  try {
-    const response = await redisApi.post(`/db_redis/${dbName}/fuzzy_match/name`, {
-      query,
-      min_similarity: minSimilarity
-    });
-    return response.data;
-  } catch (error) {
-    console.error('模糊匹配公司名称失败:', error);
-    throw error;
-  }
+  const endpoint = `/db_redis/${dbName}/fuzzy_match/name`;
+  const data = { query, min_similarity: minSimilarity };
+  
+  return handleApiRequestWithFallback(
+    async () => {
+      const response = await redisApi.post(endpoint, data);
+      return response.data;
+    },
+    async () => {
+      const response = await axios.post(`/${endpoint}`, data);
+      return response.data;
+    }
+  );
 };
 
 // 空格分隔条件模糊匹配公司ID (POST方法)

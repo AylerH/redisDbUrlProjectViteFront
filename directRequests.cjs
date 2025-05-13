@@ -2,6 +2,11 @@ const axios = require('axios');
 
 // API后端服务地址
 const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
+console.log('直接请求模块 - 后端API URL:', BACKEND_URL);
+
+// 判断是否在Render环境中
+const isRenderEnvironment = process.env.RENDER === 'true';
+console.log('运行环境:', isRenderEnvironment ? 'Render生产环境' : '本地开发环境');
 
 // 请求配置
 const REQUEST_CONFIG = {
@@ -12,6 +17,8 @@ const REQUEST_CONFIG = {
 
 // 带重试的请求函数
 async function requestWithRetry(url, options = {}, retries = REQUEST_CONFIG.maxRetries) {
+  console.log(`开始请求: ${options.method || 'GET'} ${url}`);
+  
   try {
     const startTime = Date.now();
     const response = await axios({
@@ -21,6 +28,7 @@ async function requestWithRetry(url, options = {}, retries = REQUEST_CONFIG.maxR
     });
     const duration = Date.now() - startTime;
     console.log(`请求成功: ${options.method || 'GET'} ${url} - ${duration}ms`);
+    console.log(`响应状态: ${response.status}`);
     return response;
   } catch (err) {
     // 请求错误处理
@@ -61,6 +69,8 @@ const cache = {
 
 // 数据库列表处理程序
 async function getDatabases(req, res) {
+  console.log(`接收到数据库列表请求 - URL: ${req.originalUrl}, 方法: ${req.method}`);
+  
   try {
     // 检查是否有有效缓存
     if (isCacheValid(cache.databases)) {
@@ -69,6 +79,8 @@ async function getDatabases(req, res) {
     }
 
     console.log('直接请求数据库列表...');
+    console.log(`请求URL: ${BACKEND_URL}/db_redis/databases`);
+    
     const response = await requestWithRetry(`${BACKEND_URL}/db_redis/databases`);
     
     // 更新缓存
@@ -100,6 +112,8 @@ async function getDatabases(req, res) {
 // 获取公司详情处理程序
 async function getCompanyById(req, res) {
   const { dbName, companyId } = req.params;
+  console.log(`接收到公司详情请求 - URL: ${req.originalUrl}, 数据库: ${dbName}, ID: ${companyId}`);
+  
   try {
     console.log(`直接请求公司详情: ${dbName}/${companyId}`);
     const response = await requestWithRetry(`${BACKEND_URL}/db_redis/${dbName}/entity/${companyId}`);
@@ -116,6 +130,8 @@ async function getCompanyById(req, res) {
 // 获取数据库字段处理程序
 async function getDbFields(req, res) {
   const { dbName } = req.params;
+  console.log(`接收到数据库字段请求 - URL: ${req.originalUrl}, 数据库: ${dbName}`);
+  
   try {
     console.log(`直接请求数据库字段: ${dbName}`);
     const response = await requestWithRetry(`${BACKEND_URL}/db_redis/${dbName}/fields`);
@@ -133,6 +149,8 @@ async function getDbFields(req, res) {
 async function listCompanies(req, res) {
   const { dbName } = req.params;
   const { limit = 100, offset = 0 } = req.query;
+  console.log(`接收到公司列表请求 - URL: ${req.originalUrl}, 数据库: ${dbName}, limit: ${limit}, offset: ${offset}`);
+  
   try {
     console.log(`直接请求公司列表: ${dbName} (limit=${limit}, offset=${offset})`);
     const response = await requestWithRetry(
@@ -151,6 +169,8 @@ async function listCompanies(req, res) {
 // 模糊匹配公司ID处理程序
 async function matchCompanyById(req, res) {
   const { dbName } = req.params;
+  console.log(`接收到模糊匹配请求 - URL: ${req.originalUrl}, 数据库: ${dbName}`);
+  
   try {
     console.log(`直接请求模糊匹配公司ID: ${dbName}`);
     const response = await requestWithRetry(
