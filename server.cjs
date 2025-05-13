@@ -64,33 +64,6 @@ if (isRender) {
   });
 }
 
-// API代理配置
-const apiProxy = createProxyMiddleware({
-  target: BACKEND_URL,
-  changeOrigin: true,
-  pathRewrite: {
-    '^/api': '' // 移除/api前缀
-  },
-  logLevel: 'debug',
-  onError: (err, req, res, next) => {
-    console.error('代理错误:', err);
-    // 让请求继续，可能由直接请求处理
-    next();
-  }
-});
-
-// DB Redis代理配置
-const dbRedisProxy = createProxyMiddleware({
-  target: BACKEND_URL,
-  changeOrigin: true,
-  logLevel: 'debug',
-  onError: (err, req, res, next) => {
-    console.error('db_redis代理错误:', err);
-    // 让请求继续，可能由直接请求处理
-    next();
-  }
-});
-
 // CORS配置
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -101,6 +74,24 @@ app.use((req, res, next) => {
     return res.sendStatus(200);
   }
   next();
+});
+
+// ======== 重要：提供后端URL配置的接口 ========
+// 注意：这些路由必须在任何代理之前定义，确保它们总是可访问的
+app.get('/config/backend-url', (req, res) => {
+  console.log('提供后端URL配置 (无前缀路径)');
+  res.json({ backend_url: BACKEND_URL });
+});
+
+app.get('/api/config/backend-url', (req, res) => {
+  console.log('提供后端URL配置 (带前缀路径)');
+  res.json({ backend_url: BACKEND_URL });
+});
+
+// 简化路径，任何位置都能访问的配置
+app.get('*/backend-url', (req, res) => {
+  console.log('提供后端URL配置 (通配路径)');
+  res.json({ backend_url: BACKEND_URL });
 });
 
 // 健康检查路由
@@ -132,9 +123,31 @@ app.get('/api/db_redis/databases', (req, res) => {
   directRequests.getDatabases(req, res);
 });
 
-// 提供后端URL的API端点
-app.get('/api/config/backend-url', (req, res) => {
-  res.json({ backend_url: BACKEND_URL });
+// API代理配置
+const apiProxy = createProxyMiddleware({
+  target: BACKEND_URL,
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api': '' // 移除/api前缀
+  },
+  logLevel: 'debug',
+  onError: (err, req, res, next) => {
+    console.error('代理错误:', err);
+    // 让请求继续，可能由直接请求处理
+    next();
+  }
+});
+
+// DB Redis代理配置
+const dbRedisProxy = createProxyMiddleware({
+  target: BACKEND_URL,
+  changeOrigin: true,
+  logLevel: 'debug',
+  onError: (err, req, res, next) => {
+    console.error('db_redis代理错误:', err);
+    // 让请求继续，可能由直接请求处理
+    next();
+  }
 });
 
 // 尝试代理其他请求

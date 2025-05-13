@@ -5,22 +5,55 @@ const isDevelopment = import.meta.env.DEV;
 console.log('前端应用环境:', isDevelopment ? '开发环境' : '生产环境');
 
 // 默认后端URL配置（将通过API获取实际值）
-let BACKEND_URL: string | null = null;
+let BACKEND_URL: string = 'https://redis-ctl-api.onrender.com';
 
 // 无论在任何环境中，都使用相对路径访问API
 const API_BASE_URL = '/api';
 console.log('API基础URL:', API_BASE_URL);
 
-// 获取后端URL配置
+// 获取后端URL配置（尝试多种路径）
 const fetchBackendUrl = async () => {
   try {
-    const response = await axios.get('/api/config/backend-url');
-    if (response.data && response.data.backend_url) {
-      BACKEND_URL = response.data.backend_url;
-      console.log('获取到后端URL配置:', BACKEND_URL);
+    // 尝试所有可能的配置URL路径
+    const possiblePaths = [
+      '/api/config/backend-url',
+      '/config/backend-url',
+      '/backend-url',
+      '/api/backend-url'
+    ];
+    
+    let success = false;
+    
+    for (const path of possiblePaths) {
+      try {
+        console.log(`尝试从 ${path} 获取后端URL...`);
+        const response = await axios.get(path, { timeout: 3000 });
+        
+        if (response.data && response.data.backend_url) {
+          BACKEND_URL = response.data.backend_url;
+          console.log('成功获取到后端URL配置:', BACKEND_URL);
+          success = true;
+          break;
+        }
+      } catch (pathError) {
+        console.log(`路径 ${path} 获取失败`);
+      }
+    }
+    
+    if (!success) {
+      console.log('所有路径都失败，使用默认后端URL:', BACKEND_URL);
     }
   } catch (error) {
     console.error('获取后端URL配置失败:', error);
+    console.log('使用默认后端URL:', BACKEND_URL);
+  }
+  
+  // 设置完成后，初始化请求到后端的测试连接
+  try {
+    const testResponse = await axios.get(`${BACKEND_URL}/db_redis/health`, { timeout: 3000 });
+    console.log('后端连接测试成功:', testResponse.status);
+  } catch (error) {
+    console.error('后端连接测试失败:', error);
   }
 };
 
@@ -98,27 +131,23 @@ export const updateApiPort = (port: string) => {
 
 // 处理直接请求后端API（使用已获取的BACKEND_URL）
 async function directRequestToBackend(endpoint: string, options: any = {}) {
-  if (!BACKEND_URL) {
-    // 如果BACKEND_URL未设置，尝试获取
-    await fetchBackendUrl();
-  }
+  // 确保endpoint格式正确
+  const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   
-  if (BACKEND_URL) {
-    // 如果有BACKEND_URL，直接请求后端
-    const url = `${BACKEND_URL}${endpoint}`;
-    console.log(`直接请求后端API: ${url}`);
-    return axios({
+  // 使用BACKEND_URL直接请求后端
+  const url = `${BACKEND_URL}${formattedEndpoint}`;
+  console.log(`直接请求后端API: ${url}`);
+  
+  try {
+    return await axios({
       url,
       ...options,
-      timeout: 5000
+      timeout: options.timeout || 5000
     });
+  } catch (error) {
+    console.error(`直接请求后端失败: ${url}`, error);
+    throw error;
   }
-  
-  // 回退到相对路径
-  return axios({
-    url: endpoint.startsWith('/') ? endpoint : `/${endpoint}`,
-    ...options
-  });
 }
 
 // 处理API请求错误并尝试备用方法
@@ -128,42 +157,68 @@ async function handleApiRequestWithFallback<T>(
   mockData?: T
 ): Promise<T> {
   try {
-    // 尝试主要请求方式
+    // 尝试主要请求方式（通过前端代理）
     return await mainRequest();
   } catch (error) {
     console.error('主要请求失败:', error);
     
     try {
-      // 尝试直接请求
+      // 尝试直接请求（相对路径）
       console.log('尝试直接请求...');
       return await directRequest();
     } catch (directError) {
       console.error('直接请求也失败:', directError);
       
-      // 尝试使用BACKEND_URL直接请求后端
+      // 尝试使用后端URL直接请求
       try {
-        // 提取端点路径，假设是第一个函数参数
-        const mainRequestFunc = mainRequest.toString();
-        const match = mainRequestFunc.match(/\.get\(['"]([^'"]+)['"]\)/);
-        const endpoint = match ? match[1] : '';
+        console.log('尝试后端直接请求...');
+        // 提取端点路径
+        let endpoint = '';
         
-        if (endpoint && BACKEND_URL) {
-          console.log(`尝试使用后端URL直接请求: ${BACKEND_URL}${endpoint}`);
+        // 尝试从函数中提取路径
+        try {
+          const mainRequestFunc = mainRequest.toString();
+          const match = mainRequestFunc.match(/['"]([^'"]+)['"]/);
+          if (match) {
+            endpoint = match[1];
+          }
+        } catch (e) {
+          console.error('无法从函数提取路径:', e);
+        }
+        
+        // 如果无法提取，尝试在directRequest函数中寻找
+        if (!endpoint) {
+          try {
+            const directRequestFunc = directRequest.toString();
+            const match = directRequestFunc.match(/['"]([^'"]+)['"]/);
+            if (match) {
+              endpoint = match[1];
+            }
+          } catch (e) {
+            console.error('无法从直接请求函数提取路径:', e);
+          }
+        }
+        
+        // 如果有路径，尝试直接请求后端
+        if (endpoint) {
+          console.log(`尝试直接请求后端: ${endpoint}`);
           const response = await directRequestToBackend(endpoint);
-          return response.data;
+          return response.data as T;
+        } else {
+          throw new Error('无法确定请求路径');
         }
       } catch (backendError) {
         console.error('后端直接请求失败:', backendError);
+        
+        // 如果有模拟数据，则返回
+        if (mockData !== undefined) {
+          console.log('返回模拟数据');
+          return mockData;
+        }
+        
+        // 否则抛出原始错误
+        throw error;
       }
-      
-      // 如果有模拟数据，则返回
-      if (mockData !== undefined) {
-        console.log('返回模拟数据');
-        return mockData;
-      }
-      
-      // 否则抛出原始错误
-      throw error;
     }
   }
 }
@@ -181,9 +236,9 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     return cache.databases;
   }
 
-  // 定义请求函数
+  // 定义请求函数 - 通过前端代理
   const mainRequest = async () => {
-    // 标准请求（使用代理）
+    console.log('通过前端代理获取数据库列表...');
     const response = await redisApi.get('/db_redis/databases');
     console.log('成功获取数据库列表:', response.data);
     
@@ -194,11 +249,12 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
     return response.data;
   };
   
+  // 直接请求函数 - 尝试相对路径
   const directRequest = async () => {
-    // 尝试不同的路径
     try {
-      console.log('尝试路径 /db_redis/databases...');
+      console.log('尝试通过相对路径获取数据库列表...');
       const response = await axios.get('/db_redis/databases');
+      console.log('相对路径获取成功!');
       
       // 更新缓存
       cache.databases = response.data;
@@ -206,11 +262,13 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
       
       return response.data;
     } catch (error) {
-      console.error('路径 /db_redis/databases 失败, 尝试完整路径');
+      console.error('相对路径获取失败，尝试其他方法...');
       
       try {
-        // 尝试使用窗口位置
+        // 尝试使用当前页面URL获取
+        console.log('通过当前页面URL获取数据库列表...');
         const fullUrlResponse = await axios.get(window.location.origin + '/db_redis/databases');
+        console.log('通过页面URL获取成功!');
         
         // 更新缓存
         cache.databases = fullUrlResponse.data;
@@ -218,10 +276,12 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
         
         return fullUrlResponse.data;
       } catch (windowError) {
-        console.error('窗口位置路径失败, 尝试直接后端请求');
+        console.error('页面URL方法也失败，尝试直接后端请求...');
         
-        // 尝试直接请求后端
+        // 尝试直接请求后端API
+        console.log(`直接从后端 ${BACKEND_URL} 获取数据库列表...`);
         const backendResponse = await directRequestToBackend('/db_redis/databases');
+        console.log('后端直接请求成功!');
         
         // 更新缓存
         cache.databases = backendResponse.data;
@@ -231,8 +291,36 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
       }
     }
   };
+
+  // 最后一次尝试 - 直接使用后端URL
+  const lastResortRequest = async () => {
+    try {
+      console.log('最后尝试: 直接使用后端URL获取...');
+      // 此路径不使用 /db_redis 前缀，而是使用API约定路径
+      const response = await axios.get(`${BACKEND_URL}/db_redis/databases`, {
+        timeout: 8000
+      });
+      
+      console.log('最后尝试成功!');
+      // 更新缓存
+      cache.databases = response.data;
+      cache.expiry = Date.now() + CACHE_EXPIRY;
+      
+      return response.data;
+    } catch (error) {
+      console.error('所有方法都失败，返回模拟数据', error);
+      return MOCK_DATABASE_LIST;
+    }
+  };
   
-  return handleApiRequestWithFallback(mainRequest, directRequest, MOCK_DATABASE_LIST);
+  try {
+    // 尝试使用fallback机制获取数据
+    return await handleApiRequestWithFallback(mainRequest, directRequest, MOCK_DATABASE_LIST);
+  } catch (error) {
+    console.error('所有fallback尝试都失败，使用最后的方法', error);
+    // 做最后一次尝试
+    return await lastResortRequest();
+  }
 };
 
 // 清除缓存，强制刷新
