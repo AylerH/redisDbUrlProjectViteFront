@@ -3,14 +3,11 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const path = require('path');
 const app = express();
 
-// 环境变量
-const isProduction = process.env.NODE_ENV === 'production';
-const BACKEND_URL = process.env.BACKEND_URL || 'https://redis-ctl-api.onrender.com';
-
-console.log('服务器启动环境:', isProduction ? '生产环境' : '开发环境');
+// API后端服务地址
+const BACKEND_URL = 'https://redis-ctl-api.onrender.com';
 console.log('后端API URL:', BACKEND_URL);
 
-// 增加请求日志中间件
+// 请求日志中间件
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -20,7 +17,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// 设置API代理
+// API代理配置
 const apiProxy = createProxyMiddleware({
   target: BACKEND_URL,
   changeOrigin: true,
@@ -34,7 +31,7 @@ const apiProxy = createProxyMiddleware({
   }
 });
 
-// DB Redis代理
+// DB Redis代理配置
 const dbRedisProxy = createProxyMiddleware({
   target: BACKEND_URL,
   changeOrigin: true,
@@ -45,11 +42,11 @@ const dbRedisProxy = createProxyMiddleware({
   }
 });
 
-// API请求代理
+// 配置API代理
 app.use('/api', apiProxy);
 app.use('/db_redis', dbRedisProxy);
 
-// CORS支持
+// CORS配置
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -64,7 +61,7 @@ app.use((req, res, next) => {
 // 静态文件服务
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// 所有其他请求返回index.html
+// SPA路由支持
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
@@ -75,10 +72,10 @@ app.use((err, req, res, next) => {
   res.status(500).send('服务器内部错误');
 });
 
-// 设置端口
+// 端口配置
 const PORT = process.env.PORT || 3000;
 
 // 启动服务器
-const server = app.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`服务器运行在 http://localhost:${PORT}`);
 }); 

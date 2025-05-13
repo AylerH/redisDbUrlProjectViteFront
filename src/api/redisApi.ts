@@ -1,14 +1,14 @@
 import axios from 'axios';
 
-// 获取环境信息
+// 获取环境信息（仅用于日志显示）
 const isDevelopment = import.meta.env.DEV;
 console.log('前端应用环境:', isDevelopment ? '开发环境' : '生产环境');
 
-// 无论开发还是生产环境，都使用相对路径，避免CORS问题
+// 无论在任何环境中，都使用相对路径访问API
 const API_BASE_URL = '/api';
 console.log('API基础URL:', API_BASE_URL);
 
-// 创建一个可以配置的API实例
+// 创建一个统一的API实例
 const createRedisApi = () => {
   const instance = axios.create({
     baseURL: API_BASE_URL,
@@ -16,9 +16,7 @@ const createRedisApi = () => {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
-    // 启用CORS请求，允许跨域cookies
     withCredentials: false,
-    // 设置较长的超时时间
     timeout: 30000
   });
 
@@ -93,10 +91,10 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
   }
 
   try {
-    // 详细日志
-    console.log(`请求数据库列表 - 环境:${isDevelopment ? '开发' : '生产'}, 强制刷新:${forceRefresh}`);
+    // 日志记录
+    console.log(`请求数据库列表 - 强制刷新:${forceRefresh}`);
     
-    // 使用redisApi实例，保持与其他API请求一致的处理方式
+    // 统一的API请求方式，开发环境和生产环境相同
     const response = await redisApi.get('/db_redis/databases');
     console.log('成功获取数据库列表:', response.data);
     
@@ -108,16 +106,11 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
   } catch (error) {
     console.error('获取数据库列表失败:', error);
     
-    // 尝试直接使用axios发送请求（作为备选方案）
+    // 尝试直接获取
     try {
-      console.log('尝试使用备选方法获取数据库列表...');
-      const directResponse = await axios.get('/db_redis/databases', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        }
-      });
-      console.log('备选方法成功:', directResponse.data);
+      console.log('尝试直接获取数据库列表...');
+      const directResponse = await axios.get('/db_redis/databases');
+      console.log('直接请求成功:', directResponse.data);
       
       // 更新缓存
       cache.databases = directResponse.data;
@@ -125,16 +118,14 @@ export const getDatabases = async (forceRefresh: boolean = false) => {
       
       return directResponse.data;
     } catch (directError) {
-      console.error('备选方法也失败:', directError);
-      console.log('返回模拟数据');
+      console.error('直接请求失败:', directError);
       
-      // 如果缓存中有数据，返回缓存数据，即使已过期
       if (cache.databases) {
         console.log('返回过期的缓存数据');
         return cache.databases;
       }
       
-      // 返回模拟数据，避免UI出错
+      // 返回模拟数据
       return MOCK_DATABASE_LIST;
     }
   }

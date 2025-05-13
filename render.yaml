@@ -3,11 +3,4 @@ services:
     name: redis-ctl-frontend
     env: node
     buildCommand: npm install && npm run build
-    startCommand: npm run render-start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 10000
-      - key: BACKEND_URL
-        value: https://redis-ctl-api.onrender.com 
+    startCommand: npm start 
